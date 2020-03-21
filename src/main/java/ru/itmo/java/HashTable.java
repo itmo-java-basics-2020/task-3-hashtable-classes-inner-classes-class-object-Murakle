@@ -1,115 +1,110 @@
 package ru.itmo.java;
 
-import java.util.Map;
-
 public class HashTable {
+    private static final double DEFAULT_LOAD_FACTOR = 0.5;
+    private static final int DEFAULT_RESIZE_FACTOR = 2;
+    private static final int DEFAULT_STEP = 3;
     private Entry[] entries;
-    private boolean[] deleted;
-    private int cnt;
-    private int keyCnt;
+    private int size;
     private int step;
     private double loadFactor;
 
     public HashTable(int startSize, double loadFactor) {
-        cnt = 0;
-        keyCnt = 0;
-        step = 3;
+        size = 0;
+        step = DEFAULT_STEP;
         entries = new Entry[startSize + (startSize % step) ^ 1];
-        deleted = new boolean[startSize + (startSize % step) ^ 1];
-
         this.loadFactor = loadFactor;
     }
 
     public HashTable(int startSize) {
-        this(startSize, 0.5f);
+        this(startSize, DEFAULT_LOAD_FACTOR);
     }
 
-    public Object put(Object key, Object value) {
-        if (key == null) return null;
-        int i = (key.hashCode() * (key.hashCode() < 0 ? -1 : 1)) % entries.length;
-        while (true) {
-            if (entries[i] == null || deleted[i] && entries[i].keyEquals(key)) {
-                keyCnt += entries[i] == null ? 1 : 0;
-                entries[i] = new Entry(key, value);
-                deleted[i] = false;
-                cnt++;
-                if (keyCnt >= entries.length * loadFactor) resize();
-                return null;
-            }
-            if (!deleted[i] && entries[i].keyEquals(key)) {
-                return entries[i].setValue(value);
-            }
-            i = (i + step) % entries.length;
-        }
-    }
-
-    public Object get(Object key) {
-        if (key == null) return null;
-        int i = (key.hashCode() * (key.hashCode() < 0 ? -1 : 1)) % entries.length;
-        while (true) {
-            if (entries[i] == null || deleted[i] && entries[i].keyEquals(key)) return null;
-            if (!deleted[i] && entries[i].keyEquals(key))
-                return entries[i].getValue();
-            i = (i + step) % entries.length;
-        }
-    }
-
-    public Object remove(Object key) {
-        if (key == null) return null;
-
-        int hc = (key.hashCode() * (key.hashCode() < 0 ? -1 : 1)) % entries.length;
+    private Integer findPosition(Object key) {
+        int hc = Math.abs(key.hashCode()) % entries.length;
         int i = hc;
         while (true) {
-            if (entries[i] == null || deleted[i] && entries[i].keyEquals(key)) return null;
-            if (!deleted[i] && entries[i].keyEquals(key)) {
-                Object val = entries[i].getValue();
-                deleted[i] = true;
-                cnt--;
-                return val;
-            }
+            if (entries[i] == null)
+                return null;
+            if (!entries[i].deleted() && entries[i].keyEquals(key))
+                return i;
             i = (i + step) % entries.length;
             if (i == hc) return null;
         }
     }
 
+    public Object put(Object key, Object value) {
+        Integer positionOfKey = findPosition(key);
+        if (positionOfKey == null) {
+            size++;
+            if (size > entries.length * loadFactor)
+                resize();
+            int i = Math.abs(key.hashCode()) % entries.length;
+            while (true) {
+                if (entries[i] == null || entries[i].deleted) {
+                    entries[i] = new Entry(key, value);
+                    return null;
+                }
+                i = (i + step) % entries.length;
+            }
+        } else {
+            Object previousValue = entries[positionOfKey].getValue();
+            entries[positionOfKey] = new Entry(key, value);
+            return previousValue;
+        }
+    }
+
+    public Object get(Object key) {
+        Integer positionOfKey = findPosition(key);
+        return positionOfKey == null ? null : entries[positionOfKey].getValue();
+    }
+
+    public Object remove(Object key) {
+        Integer positionOfKey = findPosition(key);
+        if (positionOfKey == null) return null;
+        size--;
+        return entries[positionOfKey].delete();
+    }
+
     public int size() {
-        return cnt;
+        return size;
     }
 
     private void resize() {
-        Entry[] newEntries = new Entry[entries.length * 2];
-        keyCnt = 0;
+        Entry[] newEntries = new Entry[entries.length * DEFAULT_RESIZE_FACTOR];
         for (int i = 0; i < entries.length; i++) {
-            if (entries[i] != null && !deleted[i]) {
-                keyCnt++;
-                int j = (entries[i].getHash() * (entries[i].getHash() < 0 ? -1 : 1)) % newEntries.length;
+            if (entries[i] != null && !entries[i].deleted()) {
+                int j = Math.abs(entries[i].getKey().hashCode()) % newEntries.length;
                 while (true) {
                     if (newEntries[j] == null) {
                         newEntries[j] = entries[i];
                         break;
-                    } else {
-                        j = (j + step) % newEntries.length;
                     }
+                    j = (j + step) % newEntries.length;
                 }
             }
         }
-        deleted = new boolean[entries.length * 2];
         entries = newEntries;
-
     }
 
 
     private class Entry {
-        private Object key;
-        private Object value;
+        private final Object key;
+        private final Object value;
+        private boolean deleted;
 
         public Entry(Object key, Object value) {
             this.key = key;
             this.value = value;
+            deleted = false;
         }
 
         public Object getValue() {
             return value;
+        }
+
+        public Object getKey() {
+            return key;
         }
 
         public boolean keyEquals(Object key) {
@@ -118,14 +113,15 @@ public class HashTable {
             return false;
         }
 
-        public int getHash() {
-            return key.hashCode();
+        public Object delete() {
+            deleted = true;
+            return value;
         }
 
-        public Object setValue(Object value) {
-            Object val = this.value;
-            this.value = value;
-            return val;
+        public boolean deleted() {
+            return deleted;
         }
+
+
     }
 }
